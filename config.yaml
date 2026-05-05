@@ -1,0 +1,165 @@
+capital: 1000000
+target:
+  annual_return: 0.09
+  max_drawdown: 0.18
+  holding_months_min: 3
+  holding_months_max: 6
+
+markets:
+  qdii:
+    max_allocation: 0.50
+    min_aum: 50
+    min_position_ratio: 0.95
+    allowed_fx_methods:
+      - "公允价"
+      - "16:00参考汇率"
+      - "市场价"
+  hk:
+    max_allocation: 0.50
+  a_share:
+    max_allocation: 0.30
+
+positions:
+  max_single_etf_pct: 0.25
+  min_cash_pct: 0.05
+  max_monthly_turnover_pct: 0.20
+  etf_count_min: 5
+  etf_count_max: 12
+  etf_count_initial_min: 6
+  etf_count_initial_max: 10
+  correlation_merge_threshold: 0.85
+  correlation_diversify_threshold: 0.70
+
+volatility:
+  us:
+    ticker: "^VIX"
+    normal_max: 20
+    panic: 25
+  hk:
+    ticker: "VHSI"
+    normal_max: 30
+    panic: 30
+  a_share:
+    ticker: "000188"
+    normal_max: 25
+    panic: 30
+
+scoring:
+  pe_signals:
+    structural:
+      buy_below: 0.30
+      sell_above: 0.70
+    cyclical:
+      buy_below: 0.25
+      sell_above: 0.65
+  stop_loss:
+    structural: 0.15
+    cyclical: 0.12
+    event_driven: 0.10
+  take_profit:
+    structural: 0.30
+    cyclical: 0.20
+    event_driven: 0.15
+  staged_take_profit:
+    batch1_ratio: 0.50
+    trailing_stop_drawdown: 0.08
+  time_stops:
+    take_profit_months: 3
+    take_profit_pnl: 0.15
+    stop_loss_months: 6
+
+dca:
+  normal_allocation:
+    a_share_broad: 0.30
+    qdii_broad: 0.35
+    qdii_sector: 0.20
+    hk: 0.15
+  pause_pe_percentile: 0.70
+  double_pe_percentile: 0.15
+  double_multiplier: 1.5
+
+build_up:
+  phase1:
+    month: 1
+    amount: 400000
+    allocation:
+      a_share_broad: 120000
+      qdii_broad: 150000
+      hk_broad: 80000
+      cash: 50000
+  phase2:
+    month: 2
+    amount: 350000
+    allocation:
+      a_share_enhanced: 100000
+      qdii_sector: 120000
+      hk_sector: 80000
+      cash: 50000
+  phase3:
+    month: 3
+    amount: 250000
+    allocation:
+      satellite: 150000
+      top_up: 50000
+      cash: 50000
+
+llm:
+  provider: "deepseek"
+  api_key_env: "DEEPSEEK_API_KEY"
+  model: "deepseek-chat"
+  max_tokens_daily: 500
+  max_tokens_weekly: 2000
+  max_tokens_monthly: 4000
+  temperature_report: 0.3
+
+notify:
+  wechat:
+    webhook_url_env: "WECHAT_WEBHOOK_URL"
+    retries: 3
+    timeout: 10
+  email:
+    smtp_host_env: "SMTP_HOST"
+    smtp_port_env: "SMTP_PORT"
+    smtp_user_env: "SMTP_USER"
+    smtp_pass_env: "SMTP_PASS"
+    to_env: "NOTIFY_EMAIL"
+
+news:
+  rss_feeds:
+    - "https://rss.cnn.com/rss/edition_money.rss"
+    - "https://www.reuters.com/tools/rss"
+  keywords_alert:
+    - "加息"
+    - "降息"
+    - "关税"
+    - "制裁"
+    - "衰退"
+    - "泡沫"
+    - "黑天鹅"
+
+pe_bands:
+  SPX: [15, 35]
+  NDX: [20, 40]
+  DJIA: [15, 30]
+  HSI: [8, 18]
+  NKY: [15, 30]
+  DAX: [12, 25]
+  "000300": [10, 18]
+  "000905": [15, 35]
+  "000016": [8, 16]
+
+etf_pe_bands:
+  科技: [20, 45]
+  医疗健康: [15, 38]
+  消费: [12, 32]
+  金融: [8, 20]
+  能源: [8, 25]
+  房地产: [8, 22]
+  红利: [8, 18]
+  军工: [15, 40]
+  教育: [10, 35]
+  黄金: [15, 30]
+  宽基: [12, 30]
+
+db:
+  path: "data/invest.db"
