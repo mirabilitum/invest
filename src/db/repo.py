@@ -295,6 +295,14 @@ class Repo:
         ).fetchall()
         return [r["pe_value"] for r in rows]
 
+    def has_today_pe(self, index_code: str) -> bool:
+        """Check if there's a PE record from today for this code."""
+        row = self.conn.execute(
+            "SELECT 1 FROM pe_history WHERE index_code = ? AND date(recorded_at) = date('now') LIMIT 1",
+            (index_code,),
+        ).fetchone()
+        return row is not None
+
     def compute_pe_percentile(self, index_code: str, current_pe: float) -> float | None:
         """Compute PE percentile from stored history. Returns None if no history."""
         history = self.get_pe_history(index_code)

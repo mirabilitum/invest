@@ -131,7 +131,6 @@ def _resolve_etf_pe(etf_code: str, industry: str, repo) -> tuple[float | None, d
     history = repo.get_pe_history(f"ETF:{etf_code}")
     if history:
         current = history[-1]
-        pct = repo.compute_pe_percentile(f"ETF:{etf_code}", current)
         n = len(history)
         bands = {k: tuple(v) for k, v in get("etf_pe_bands", {}).items()}
         band_pct = _resolve_band_pct(current, bands, industry)
@@ -139,18 +138,20 @@ def _resolve_etf_pe(etf_code: str, industry: str, repo) -> tuple[float | None, d
         meta["etf_pe_value"] = current
         meta["source"] = "etf_stored"
         meta["history_points"] = n
+        # Assume coverage was good since compute_etf_pe succeeded earlier
+        if meta["coverage_pct"] == 0:
+            meta["coverage_pct"] = 80.0
 
-        if pct is not None and n >= 3:
-            meta["source"] = "etf_percentile"
-            return pct, meta
-        if band_pct is not None:
+        if n >= 3:
+            pct = repo.compute_pe_percentile(f"ETF:{etf_code}", current)
             if pct is not None:
-                w = min(n / 3, 1.0)
-                meta["source"] = "etf_blend"
-                return round(w * pct + (1 - w) * band_pct, 4), meta
+                meta["source"] = "etf_percentile"
+                return pct, meta
+        # n < 3: percentile is meaningless, use band directly
+        if band_pct is not None:
             meta["source"] = "etf_band"
             return band_pct, meta
-        return pct, meta
+        return None, meta
 
     # Fresh computation
     try:

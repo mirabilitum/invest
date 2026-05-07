@@ -37,9 +37,12 @@ def compute_market_weight(score: int, pe_pct: float, flow_sig: int) -> float:
 def compute_dynamic_weights(scored_results: list[dict]) -> dict[str, float]:
     """Compute per-market allocation weights from scan results.
 
+    Dynamic PE/flow signal, capped by config market limits.
     Returns {market: weight_pct} normalized to sum to 1.0.
     Returns empty dict if no market is deployable.
     """
+    from src.config import get as _cfg
+
     market_scores = {}
 
     for r in scored_results:
@@ -60,12 +63,51 @@ def compute_dynamic_weights(scored_results: list[dict]) -> dict[str, float]:
         if avg > 0:
             raw_weights[mkt] = avg
 
-    # Normalize to sum 1.0
     total = sum(raw_weights.values())
     if total <= 0:
         return {}
 
-    return {mkt: round(w / total, 4) for mkt, w in raw_weights.items()}
+    # Normalize
+    weights = {mkt: w / total for mkt, w in raw_weights.items()}
+
+    # Apply per-market caps from config, redistribute excess proportionally
+    caps = {
+        "qdii": _cfg("markets.qdii.max_allocation", 0.50),
+        "hk": _cfg("markets.hk.max_allocation", 0.50),
+        "a_share": _cfg("markets.a_share.max_allocation", 0.30),
+    }
+
+    for _ in range(3):
+        excess = 0.0
+        capped = {}
+        for mkt, w in weights.items():
+            cap = caps.get(mkt, 1.0)
+            if w > cap:
+                excess += w - cap
+                capped[mkt] = cap
+            else:
+                capped[mkt] = w
+
+        if excess <= 0.001:
+            weights = capped
+            break
+
+        # Redistribute excess to uncapped markets
+        uncapped = {m: w for m, w in capped.items() if w < caps.get(m, 1.0) - 0.001}
+        if not uncapped:
+            weights = capped
+            break
+
+        uncapped_total = sum(uncapped.values())
+        if uncapped_total <= 0:
+            weights = capped
+            break
+
+        for mkt in uncapped:
+            capped[mkt] += excess * (capped[mkt] / uncapped_total)
+        weights = capped
+
+    return {mkt: round(w, 4) for mkt, w in weights.items()}
 
 
 def get_build_up_status(repo) -> dict:
