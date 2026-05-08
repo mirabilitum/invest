@@ -5,23 +5,29 @@ log = logging.getLogger("invest.data.volatility")
 
 
 def fetch_implied_volatility(market: str) -> float | None:
-    """Fetch VIX/VHSI/iVIX. Returns None on failure."""
+    """Fetch VIX / VHSI / iVIX. Returns None on failure."""
     try:
         import akshare as ak
         if market == "us":
-            # VIX via akshare (may not be available, falls back to historical)
-            df = ak.index_vix()
+            # VIX via index_global_spot_em (ak.index_vix removed from akshare)
+            df = ak.index_global_spot_em()
             if df is not None and not df.empty:
-                return float(df.iloc[-1].get("close", 0))
+                row = df[df["名称"].str.contains("VIX", na=False)]
+                if not row.empty:
+                    return float(row.iloc[0]["最新价"])
         elif market == "hk":
+            # VHSI via stock_hk_index_daily_em
             df = ak.stock_hk_index_daily_em(symbol="VHSI")
             if df is not None and not df.empty:
-                return float(df.iloc[-1].get("close", 0))
+                return float(df.iloc[-1]["latest"])
         elif market == "a_share":
             # iVIX via SSE 50 ETF options QVIX
             df = ak.index_option_50etf_qvix()
             if df is not None and not df.empty:
-                return float(df.iloc[-1].get("close", 0))
+                # Find the QVIX column or close
+                for col in ["QVIX", "close", "收盘"]:
+                    if col in df.columns:
+                        return float(df.iloc[-1][col])
     except Exception as e:
         log.warning("Implied volatility fetch failed for %s: %s", market, e)
     return None

@@ -80,14 +80,23 @@ curl -X POST http://127.0.0.1:7711/invest \
 total = pe_signal + flow_signal + vol_signal
 
 pe_signal:   PE 分位 < 30% → +1, > 70% → -1
-flow_signal: 主力净流入 > 3% → +1, < -3% → -1
+flow_signal: 主力净流入 10日 MA > 3% → +1, < -3% → -1
 vol_signal:  恐慌波动 + 低 PE → +1（别人恐惧我贪婪）
 
 buy:  total >= 2
 sell: total <= -1
 ```
 
-PE 分位 = 60% × 5 年滚动分位 + 40% × 全历史分位（防估值中枢漂移）
+PE 分位数据来源（按优先级）：
+1. **danjuanfunds** — 自动拉取 63 个指数 PE + 历史分位（覆盖恒生指数/科技、标普 500、纳指等）
+2. **ETF 持仓反推** — 爬东方财富 F10 持仓 → 逐股 PE → 加权平均
+3. **行业 band 估算** — 手动校准的 PE 区间，每月更新一次
+4. **用户手动录入** — `pe <SPX> <NDX> <HSI>` 命令
+
+资金流数据来源：
+- `fund_etf_spot_em` 每日全量快照 → 缓存到 DB（当天不重复拉）
+- 首日 `stock_individual_fund_flow` 回填历史 → 10 日 MA 即查即算
+- 后续 scan 当日只算 MA，不重复拉 API
 
 ## 建仓策略
 
@@ -112,10 +121,13 @@ src/
     classifier.py   行业分类
     rebalance.py    调仓计算
   data/
+    reports/        每日扫描报告（YYYY-MM-DD.md）
     etf_pool.py     ETF 发现 + 筛选
     market.py       PE 数据拉取（A 股自动）
+    index_pe.py     指数 PE（danjuanfunds，63指数自动拉取）
+    flow.py         资金流（10日 MA，每日缓存不重复拉）
     etf_pe.py       ETF PE 从持仓反推
-    volatility.py   波动率（iVIX/VIX/VHSI）
+    volatility.py   波动率（VIX/VHSI/iVIX）
     news.py         RSS 舆情扫描
     calendar.py     交易日历
   db/

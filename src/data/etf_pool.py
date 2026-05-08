@@ -15,6 +15,8 @@ INDEX_KEYWORDS = [
     (["纳指", "纳斯达克", "NDX", "nasdaq"], "NDX"),
     (["标普", "SPX", "S&P", "sp500", "sp 500"], "SPX"),
     (["道琼斯", "道指", "DJI", "dow"], "DJIA"),
+    (["恒生消费", "港股消费", "港股通消费"], "HSCGSI"),
+    (["恒生科技", "港股通科技"], "HSTECH"),
     (["恒生", "HSI", "hang seng"], "HSI"),
     (["日经", "nikkei", "NKY"], "NKY"),
     (["德国", "dax", "DAX"], "DAX"),

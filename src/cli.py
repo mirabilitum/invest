@@ -90,6 +90,9 @@ def format_result(result: dict) -> str:
     elif action == "pe":
         lines.append(result.get("message", ""))
 
+    if result.get("report_path"):
+        lines.append(f"\n报告: {result['report_path']}")
+
     return "\n".join(lines)
 
 

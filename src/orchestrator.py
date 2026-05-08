@@ -190,6 +190,7 @@ def _handle_scan(repo) -> dict:
     try:
         from src.data.market import fetch_all_index_valuations
         from src.data.volatility import fetch_volatility_with_fallback
+        from src.data.index_pe import fetch_all_index_pe, store_index_pe
         from src.config import get as cfg_get
 
         etfs = discover_and_screen_etfs()
@@ -205,18 +206,19 @@ def _handle_scan(repo) -> dict:
         except Exception:
             pass
 
-        # Build fund flow map from spot data (主力净流入-净占比)
+        # Fetch index PE from danjuanfunds (real PE + historical percentile, 63 indices)
+        dj_index_pe = {}
+        try:
+            dj_index_pe = store_index_pe(repo)
+        except Exception:
+            pass
+
+        # Build fund flow map with 5-day MA (caches daily snapshot in DB)
         flow_map = {}
         try:
-            import akshare as ak
-            spot_df = ak.fund_etf_spot_em()
-            spot_cols = spot_df.columns.tolist()
-            spot_code_col = spot_cols[0]
-            flow_col = spot_cols[20]  # 主力净流入-净占比
-            for _, srow in spot_df.iterrows():
-                code = str(srow[spot_code_col]).replace("sz", "").replace("sh", "")
-                flow_val = srow[flow_col]
-                flow_map[code] = float(flow_val) if pd.notna(flow_val) else 0.0
+            from src.data.flow import capture_daily_flow, compute_flow_signal
+            today_flow = capture_daily_flow(repo)
+            flow_map = today_flow
         except Exception:
             pass
 
@@ -261,34 +263,47 @@ def _handle_scan(repo) -> dict:
                     pe_pct = a_share_pe.get(index_code)
                     pe_source = "a_share_index"
                 else:
-                    # 1. Try ETF PE from holdings
-                    etf_pct, etf_meta = _resolve_etf_pe(etf_code, industry, repo)
-                    # 2. Try index PE from user input
-                    idx_pct = _resolve_pe_percentile(index_code, repo)
+                    # 0. Try danjuanfunds index PE (real-time PE + historical percentile)
+                    dj_data = dj_index_pe.get(index_code, {})
+                    dj_pe = dj_data.get("pe")
+                    dj_pct = dj_data.get("pe_percentile")
 
-                    if etf_pct is not None and etf_meta.get("coverage_pct", 0) >= 50:
-                        pe_pct = etf_pct
-                        pe_source = etf_meta["source"]
-                    elif etf_pct is not None and idx_pct is not None:
-                        cov = etf_meta.get("coverage_pct", 30) / 100
-                        pe_pct = round(cov * etf_pct + (1 - cov) * idx_pct, 4)
-                        pe_source = f"etf_blend_{etf_meta['source']}+index"
-                    elif etf_pct is not None:
-                        pe_pct = etf_pct
-                        pe_source = etf_meta["source"]
-                    elif idx_pct is not None:
-                        pe_pct = idx_pct
-                        pe_source = "index_user"
+                    if dj_pe and dj_pe > 0 and dj_pct is not None:
+                        pe_pct = round(dj_pct, 4)
+                        pe_source = "danjuanfunds"
                     else:
-                        bands = _pe_bands()
-                        if bands.get(index_code):
-                            pe_source = "index_band"
+                        # 1. Try ETF PE from holdings
+                        etf_pct, etf_meta = _resolve_etf_pe(etf_code, industry, repo)
+                        # 2. Try index PE from user input
+                        idx_pct = _resolve_pe_percentile(index_code, repo)
+
+                        if etf_pct is not None and etf_meta.get("coverage_pct", 0) >= 50:
+                            pe_pct = etf_pct
+                            pe_source = etf_meta["source"]
+                        elif etf_pct is not None and idx_pct is not None:
+                            cov = etf_meta.get("coverage_pct", 30) / 100
+                            pe_pct = round(cov * etf_pct + (1 - cov) * idx_pct, 4)
+                            pe_source = f"etf_blend_{etf_meta['source']}+index"
+                        elif etf_pct is not None:
+                            pe_pct = etf_pct
+                            pe_source = etf_meta["source"]
+                        elif idx_pct is not None:
+                            pe_pct = idx_pct
+                            pe_source = "index_user"
+                        else:
+                            bands = _pe_bands()
+                            if bands.get(index_code):
+                                pe_source = "index_band"
 
                 if pe_pct is None:
                     pe_pct = 0.5
 
-                # Fund flow for this ETF
+                # Fund flow: 5-day MA (stored daily snapshots, bootstrapped from history)
                 flow_pct = flow_map.get(etf_code, 0.0)
+                try:
+                    flow_pct, _flow_sig = compute_flow_signal(etf_code, flow_pct, repo)
+                except Exception:
+                    pass
 
                 # Volatility for this market
                 vol = vol_cache.get(mkt, 0.0)
@@ -375,7 +390,8 @@ def _handle_scan(repo) -> dict:
         # Check if PE input needed
         missing = _missing_pe_indices(repo)
 
-        return {
+        # Generate daily markdown report
+        result = {
             "status": "ok",
             "action": "scan",
             "total_found": len(passed),
@@ -389,8 +405,18 @@ def _handle_scan(repo) -> dict:
                 f"例如: pe 28.5 35.2 10.1\n"
                 f"查询: quote.eastmoney.com 搜索 SPX/NDX/HSI"
             ) if missing else None,
-            "note": _bu_note(bu, window_open),
+            "note": _bu_note(bu, window_open) + _band_note(cfg_get),
         }
+
+        # Save daily report
+        try:
+            from src.report_writer import generate
+            path = generate(result, repo)
+            result["report_path"] = path
+        except Exception:
+            pass
+
+        return result
     except Exception as e:
         log.error("scan failed: %s", e)
         return {"status": "error", "action": "scan", "message": str(e)}
@@ -595,4 +621,20 @@ def _bu_note(bu: dict, has_buy: bool) -> str:
         return f"建仓完成 ({bu.get('deployed_pct', 100):.0f}%) — 进入轮动模式"
     if status == "not_started":
         return "发 reset 初始化建仓"
+    return ""
+
+
+def _band_note(get_config) -> str:
+    """Check if PE bands need updating (monthly reminder)."""
+    try:
+        from datetime import datetime, timedelta
+        updated_str = get_config("etf_pe_bands._band_updated", "")
+        if not updated_str:
+            return ""
+        updated = datetime.strptime(updated_str, "%Y-%m-%d")
+        days = (datetime.now() - updated).days
+        if days >= 30:
+            return f"\n⚠ PE bands 已 {days} 天未更新，请检查行业 PE 区间是否需要调整"
+    except Exception:
+        pass
     return ""
