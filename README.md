@@ -88,10 +88,11 @@ sell: total <= -1
 ```
 
 PE 分位数据来源（按优先级）：
-1. **danjuanfunds** — 自动拉取 63 个指数 PE + 历史分位（覆盖恒生指数/科技、标普 500、纳指等）
-2. **ETF 持仓反推** — 爬东方财富 F10 持仓 → 逐股 PE → 加权平均
-3. **行业 band 估算** — 手动校准的 PE 区间，每月更新一次
-4. **用户手动录入** — `pe <SPX> <NDX> <HSI>` 命令
+1. **danjuanfunds** — 自动拉取 63 个指数 PE + 历史分位（覆盖恒生指数/科技、标普 500、纳指等），3 次重试
+2. **web_pe** — danjuan 失败时自动 fallback：siblisresearch（HSI 网页抓取）+ Yahoo Finance（SPX/NDX，SPY/QQQ 代理）
+3. **ETF 持仓反推** — 爬东方财富 F10 持仓 → 逐股 PE → 加权平均
+4. **行业 band 估算** — 手动校准的 PE 区间，每月更新一次
+5. **用户手动录入** — `pe <SPX> <NDX> <HSI>` 命令
 
 资金流数据来源：
 - `fund_etf_spot_em` 每日全量快照 → 缓存到 DB（当天不重复拉）
@@ -125,6 +126,7 @@ src/
     etf_pool.py     ETF 发现 + 筛选
     market.py       PE 数据拉取（A 股自动）
     index_pe.py     指数 PE（danjuanfunds，63指数自动拉取）
+    web_pe.py       多源 PE fallback（siblisresearch + Yahoo）
     flow.py         资金流（10日 MA，每日缓存不重复拉）
     etf_pe.py       ETF PE 从持仓反推
     volatility.py   波动率（VIX/VHSI/iVIX）
