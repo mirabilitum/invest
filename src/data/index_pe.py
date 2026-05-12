@@ -4,6 +4,7 @@ Covers 63 indices across A-share, HK, QDII markets.
 """
 
 import logging
+import time
 import requests
 from datetime import datetime
 
@@ -59,20 +60,27 @@ CODE_MAP = {
 
 def _fetch_danjuan() -> list[dict] | None:
     """Fetch index valuation data from danjuanfunds. Returns list of index dicts or None."""
-    try:
-        r = requests.get(
-            DANJUAN_URL,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        data = r.json()
-        items = data.get("data", {}).get("items", [])
-        log.info("danjuanfunds: %d indices fetched", len(items))
-        return items
-    except Exception as e:
-        log.warning("danjuanfunds fetch failed: %s", e)
-        return None
+    delays = [0, 3, 6]
+    for attempt, delay in enumerate(delays):
+        try:
+            if attempt > 0:
+                time.sleep(delay)
+            r = requests.get(
+                DANJUAN_URL,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"},
+                timeout=15,
+            )
+            r.raise_for_status()
+            data = r.json()
+            items = data.get("data", {}).get("items", [])
+            log.info("danjuanfunds: %d indices fetched (attempt %d)", len(items), attempt + 1)
+            return items
+        except Exception as e:
+            if attempt < len(delays) - 1:
+                log.warning("danjuanfunds attempt %d failed: %s, retrying in %ds", attempt + 1, e, delays[attempt + 1])
+            else:
+                log.warning("danjuanfunds all %d attempts failed: %s", len(delays), e)
+    return None
 
 
 def fetch_all_index_pe() -> dict[str, dict]:
@@ -112,6 +120,26 @@ def fetch_all_index_pe() -> dict[str, dict]:
 def store_index_pe(repo) -> dict[str, dict]:
     """Fetch index PE and store in pe_history. Returns the fetched data."""
     data = fetch_all_index_pe()
+
+    # Supplement missing HSI/SPX/NDX from web sources
+    web_targets = {"HSI", "SPX", "NDX"}
+    existing = set(data.keys())
+    missing = web_targets - existing
+
+    if missing:
+        log.info("danjuanfunds missing: %s, trying web fallback", missing)
+        try:
+            from src.data.web_pe import fetch_web_index_pe
+            web_data = fetch_web_index_pe(repo)
+            for code in missing:
+                if code in web_data:
+                    data[code] = web_data[code]
+                    log.info("web_pe: supplemented %s PE=%.2f pct=%.1f%%",
+                             code, web_data[code]["pe"],
+                             (web_data[code].get("pe_percentile") or 0) * 100)
+        except Exception as e:
+            log.warning("web_pe fallback failed: %s", e)
+
     for code, info in data.items():
         if info["pe"] and info["pe"] > 0:
             repo.save_pe(code, info["pe"])
